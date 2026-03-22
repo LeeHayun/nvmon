@@ -18,28 +18,24 @@
 const smi = require('node-nvidia-smi');
 const http = require('http');
 const child_process = require('child_process');
-var hostname = undefined;
+const os = require('os');
 const config = require('./nvmon-config.js');
-console.log(JSON.stringify(config));
 const port = config.port; /* nvmon-smi-server port */
 
 // Get My IP Address
+let hostname;
 {
-  var os = require('os');
-  var ifaces = os.networkInterfaces();
+  const ifaces = os.networkInterfaces();
   Object.keys(ifaces).forEach(function(ifname) {
     ifaces[ifname].forEach(function(iface) {
-      if ('IPv4' !== iface.family || iface.internal !== false) {
-        // skip over internal (i.e. 127.0.0.1) and non-ipv4 addresses
-        return;
-      }
-
+      if (iface.family !== 'IPv4' || iface.internal) return;
+      const ip = iface.address;
+      console.log('interface : ' + ifname + ' / ' + ip);
+      // /g 플래그 regex는 lastIndex를 유지하므로 매 인터페이스마다 새로 생성
       const ifnameRE = new RegExp(config.ifnameFilter);
       const ipRE = new RegExp(config.ipFilter);
-      var ip = iface.address;
-      console.log('interface : ' + ifname + ' / ' + ip);
       if (os.type().startsWith('Windows') ||
-          ifnameRE.exec(ifname) !== null && ipRE.exec(ip) !== null) {
+          (ifnameRE.exec(ifname) !== null && ipRE.exec(ip) !== null)) {
         hostname = ip;
       }
     });
@@ -47,89 +43,63 @@ const port = config.port; /* nvmon-smi-server port */
 }
 if (hostname === undefined) {
   console.log('[Error] Cannot get my IP address');
-  return;
+  process.exit(1);
 }
 
-function add_username(smiObj) {
-  var gpus;
-  if (!Array.isArray(smiObj.nvidia_smi_log.gpu)) {
-    gpus = [];
-    gpus.push(smiObj.nvidia_smi_log.gpu);
-  } else {
-    gpus = smiObj.nvidia_smi_log.gpu;
-  }
+function add_username(smiObj, pidListRaw) {
+  const gpus = Array.isArray(smiObj.nvidia_smi_log.gpu)
+    ? smiObj.nvidia_smi_log.gpu
+    : [smiObj.nvidia_smi_log.gpu];
 
-  var pidListRaw = child_process.execSync('ps -eo pid,user').toString();
-  var pidListRawLines = pidListRaw.split('\n');
-  var pidToUsername = [];
-  for (i in pidListRawLines) {
-    var line = pidListRawLines[i];
-    var toks = line.replace(/\s+/g, ' ').split(' ');
-    var pid, username;
-    if (toks[0] == '') {
-      pid = parseInt(toks[1]);
-      username = toks[2];
-    } else {
-      pid = parseInt(toks[0]);
-      username = toks[1];
-    }
+  const pidToUsername = {};
+  for (const line of pidListRaw.split('\n')) {
+    const toks = line.trim().split(/\s+/);
+    const pid = parseInt(toks[0]);
     if (isNaN(pid)) continue;
-    pidToUsername[pid] = username;
+    pidToUsername[pid] = toks[1];
   }
 
-  for (var i in gpus) {
-    var gpu = gpus[i];
-    var gpu_no = gpu.minor_number;
-    var name = gpu.product_name;
-    var gpu_util = gpu.utilization.gpu_util;
-    var mem_util = gpu.utilization.memory_util;
-    var used_mem = gpu.fb_memory_usage.used;
-    var total_mem = gpu.fb_memory_usage.total;
-
-    if (typeof gpu.processes == 'object' &&
-        typeof gpu.processes.process_info == 'object') {
-      if (Array.isArray(gpu.processes.process_info)) {
-        for (var j in gpu.processes.process_info) {
-          var pid = gpu.processes.process_info[j].pid;
-          var username = pidToUsername[pid];
-          if (username === undefined) {
-            username = 'Unknown';
-          }
-          gpu.processes.process_info[j].username = username;
-        }
-      } else if (typeof gpu.processes.process_info === 'object') {
-        var pid = gpu.processes.process_info.pid;
-        var username = pidToUsername[pid];
-        if (username === undefined) {
-          username = 'Unknown';
-        }
-        gpu.processes.process_info.username = username;
-      }
+  for (const gpu of gpus) {
+    if (typeof gpu.processes !== 'object' ||
+        typeof gpu.processes.process_info !== 'object') continue;
+    const procInfos = Array.isArray(gpu.processes.process_info)
+      ? gpu.processes.process_info
+      : [gpu.processes.process_info];
+    for (const proc of procInfos) {
+      proc.username = pidToUsername[proc.pid] || 'Unknown';
     }
   }
   return smiObj;
 }
 
 // Set Server
-const server = http.createServer((req, res) => {
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/plain');
+const server = http.createServer((_req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  var smiCallback = (err, data) => {
-    if (err) {
-      var ret = {error: err};
-      res.end(JSON.stringify(ret));
-    } else {
-      data = add_username(data);
-      res.end(JSON.stringify(data, null, ' '));
-    }
-  };
+  if (_req.method !== 'GET') {
+    res.statusCode = 405;
+    res.end();
+    return;
+  }
+
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+
   try {
-    smi(smiCallback);
+    smi((err, data) => {
+      if (err) {
+        res.end(JSON.stringify({ error: String(err) }));
+        return;
+      }
+      child_process.exec('ps -eo pid,user', (psErr, stdout) => {
+        if (!psErr) {
+          data = add_username(data, stdout);
+        }
+        res.end(JSON.stringify(data));
+      });
+    });
   } catch (e) {
-    var ret = {error: e};
-    res.end(JSON.stringify(ret));
+    res.end(JSON.stringify({ error: String(e) }));
   }
 });
 

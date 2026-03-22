@@ -1,51 +1,184 @@
-<!--
-  Copyright (c) 2018-2021 Gyeonghwan Hong. All rights reserved.
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-  http://www.apache.org/licenses/LICENSE-2.0
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
--->
-
-<html>
-
+<!DOCTYPE html>
+<html lang="ko">
 <head>
-  <title>Nvidia GPU Monitor</title>
-  <!-- jQuery -->
-  <script src="//ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
-  <!-- Materialize -->
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link type="text/css" rel="stylesheet" href="./libs/materialize.css" media="screen,projection" />
-  <script type="text/javascript" src="./libs/materialize.js"></script>
-  <!-- nvmon-ui-main -->
-  <script type="text/javascript" src="./nvmon-config.js"></script>
-  <script type="text/javascript" src="./nvmon-ui-main.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NVMON</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖥</text></svg>">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f6f8fa;
+      --surface:  #ffffff;
+      --surface2: #eaeef2;
+      --border:   #d0d7de;
+      --text:     #1f2328;
+      --dim:      #57606a;
+      --blue:     #0969da;
+      --green:    #1a7f37;
+      --yellow:   #9a6700;
+      --orange:   #bc4c00;
+      --red:      #cf222e;
+      --active-bg:   #dafbe1;
+      --reserved-bg: #fff8c5;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      height: 48px;
+      padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo {
+      font-size: 17px; font-weight: 700; letter-spacing: 4px; color: var(--text);
+    }
+    .logo em { color: var(--green); font-style: normal; }
+
+    .header-right {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--dim); font-size: 12px;
+    }
+    #dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); flex-shrink: 0;
+    }
+    #dot.busy { background: var(--yellow); animation: blink 0.7s infinite; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Grid ───────────────────────────────────────────── */
+    main {
+      padding: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 12px;
+    }
+
+    /* ── Card ───────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title { display: flex; align-items: center; gap: 8px; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--dim); flex-shrink: 0;
+    }
+    .status-dot.online  { background: var(--green); }
+    .status-dot.offline { background: var(--red); animation: blink 1.5s infinite; }
+
+    .srv-name { font-weight: 600; font-size: 14px; }
+    .srv-ip   { color: var(--dim); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+
+    .btn-refresh {
+      background: none; border: 1px solid var(--border);
+      color: var(--dim); border-radius: 4px;
+      padding: 3px 10px; font-size: 12px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-refresh:hover { color: var(--text); border-color: var(--dim); }
+
+    /* ── GPU Row ─────────────────────────────────────────── */
+    .gpu-row {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .gpu-row:last-child { border-bottom: none; }
+    /* 프로세스 있고 UTIL > 0% : 사용 중 */
+    .gpu-row.active   { background: var(--active-bg); }
+    /* 프로세스 있지만 UTIL = 0% : 점유만 된 상태 */
+    .gpu-row.reserved { background: var(--reserved-bg); }
+    /* 컬러 배경 위 칩은 흰색 배경으로 대비 확보 */
+    .gpu-row.active .proc-chip,
+    .gpu-row.reserved .proc-chip { background: rgba(255, 255, 255, 0.75); }
+
+    .gpu-top {
+      display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    }
+    .gpu-id {
+      font-size: 13px; font-weight: 700; color: var(--blue);
+      min-width: 14px; flex-shrink: 0;
+    }
+    .gpu-model {
+      font-size: 11px; color: var(--dim); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 110px; flex-shrink: 0;
+    }
+
+    /* ── Metrics ─────────────────────────────────────────── */
+    .metrics { display: flex; gap: 5px; flex: 1; }
+    .metric  { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .m-head  { display: flex; align-items: baseline; gap: 3px; }
+    .m-label { font-size: 9px; color: var(--dim); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .m-value { font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 700; white-space: nowrap; overflow: hidden; }
+    .m-bar   { height: 2px; background: var(--surface2); border-radius: 1px; overflow: hidden; }
+    .m-fill  { height: 100%; border-radius: 1px; transition: width .6s ease, background .6s ease; }
+
+    /* ── Process chips ───────────────────────────────────── */
+    .proc-list {
+      margin-top: 6px;            /* 세로 여유↑ */
+      display: flex; flex-wrap: wrap; gap: 3px;
+    }
+    .proc-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: var(--surface2);
+      border-left: 2px solid;
+      border-radius: 3px;
+      padding: 1px 5px;           /* 가로 패딩↓ */
+      font-size: 11px;
+    }
+    .proc-user { font-weight: 700; }
+    .proc-name { color: var(--text); }
+    .proc-mem  { color: var(--dim); }
+
+    .no-proc { margin-top: 5px; color: var(--dim); font-size: 10px; }
+
+    /* ── States ──────────────────────────────────────────── */
+    .state-msg {
+      padding: 28px; text-align: center;
+      color: var(--dim); font-size: 12px;
+    }
+    .offline-notice {
+      padding: 6px 14px; font-size: 11px;
+      background: rgba(207, 34, 46, .06);
+      color: var(--red);
+      border-top: 1px solid rgba(207, 34, 46, .2);
+    }
+  </style>
 </head>
-
 <body>
-  <div class="navbar-fixed" style="z-index:900;">
-    <nav>
-      <div class="nav-wrapper blue">
-        <a href="#" class="brand-logo" style="margin-left:10px;"><i class="material-icons">assessment</i>NVMON</a>
-      </div>
-    </nav>
-  </div>
-  <main>
-    <div id="mainContainer">
-      <div class="row" id="mainRow">
-      </div>
-    </div>
-  </main>
-  <footer class="page-footer blue">
-    <div class="container">
-      Copyright © 2018-2019 Gyeonghwan Hong. All rights reserved.
-      <a class="blue-text text-lighten-4 right" href="http://github.com/redcarrottt">Github</a>
-    </div>
-  </footer>
-</body>
 
+<header>
+  <div class="logo">NV<em>MON</em></div>
+  <div class="header-right">
+    <div id="dot"></div>
+    Updated: <span id="lastUpdate">—</span>
+  </div>
+</header>
+
+<main id="grid"></main>
+
+<script src="./nvmon-config.js"></script>
+<script src="./nvmon-ui-main.js"></script>
+</body>
 </html>

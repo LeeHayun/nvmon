@@ -62,7 +62,8 @@
     main {
       padding: 20px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      /* min()으로 화면이 좁아도 카드가 overflow 없이 1열로 표시 */
+      grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
       gap: 12px;
     }
 
@@ -163,6 +164,39 @@
       background: rgba(207, 34, 46, .06);
       color: var(--red);
       border-top: 1px solid rgba(207, 34, 46, .2);
+    }
+    /* ── Mobile ──────────────────────────────────────────── */
+    @media (max-width: 540px) {
+      main {
+        padding: 10px;
+        gap: 8px;
+      }
+
+      /* 카드 헤더: IP 숨김, 서버 이름만 표시 */
+      .srv-ip { display: none; }
+
+      /* 리프레시 버튼 터치 영역 확대 (최소 44px 권장) */
+      .btn-refresh {
+        padding: 8px 14px;
+        font-size: 13px;
+      }
+
+      /* GPU 모델명 숨김 → 메트릭이 남은 공간 전체 사용
+         (모델명은 GPU 번호 hover tooltip으로 확인 가능) */
+      .gpu-model { display: none; }
+
+      .gpu-row { padding: 8px 10px; }
+
+      /* 프로세스 칩: 터치하기 쉽게 패딩 확대 */
+      .proc-chip {
+        padding: 3px 8px;
+        font-size: 12px;
+      }
+
+      .proc-list { gap: 5px; margin-top: 8px; }
+
+      /* 메트릭 값 폰트 약간 키움 */
+      .m-value { font-size: 12px; }
     }
   </style>
 </head>

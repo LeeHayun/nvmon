@@ -21,7 +21,7 @@ const serverCards = new Map();
 window.addEventListener('DOMContentLoaded', () => {
   const grid = document.getElementById('grid');
   for (const s of NvmonConfig.serverList) {
-    const card = new ServerCard(s.name, s.ip, s.port);
+    const card = new ServerCard(s.name, s.ip, s.port, s.proxyPath);
     serverCards.set(s.name, card);
     card.mount(grid);
   }
@@ -129,10 +129,11 @@ function metric(label, value, color, pct) {
 /* ── ServerCard ───────────────────────────────────────────── */
 
 class ServerCard {
-  constructor(name, ip, port) {
-    this.name = name;
-    this.ip   = ip;
-    this.port = port || 8110;
+  constructor(name, ip, port, proxyPath) {
+    this.name      = name;
+    this.ip        = ip;
+    this.port      = port || 8110;
+    this.proxyPath = proxyPath || null;  // Apache 프록시 경로 (HTTPS 환경용)
     this.bodyEl     = null;
     this.dotEl      = null;
     this.refreshing = false;
@@ -192,7 +193,8 @@ class ServerCard {
     };
 
     xhr.ontimeout = xhr.onerror = fail;
-    xhr.open('GET', `http://${this.ip}:${this.port}`, true);
+    const url = this.proxyPath || `http://${this.ip}:${this.port}`;
+    xhr.open('GET', url, true);
     xhr.send();
   }
 }
